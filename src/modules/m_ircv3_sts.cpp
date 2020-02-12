@@ -28,6 +28,7 @@ class STSCap : public Cap::Capability
 	std::string host;
 	std::string plaintextpolicy;
 	std::string securepolicy;
+	mutable UserCertificateAPI sslapi;
 
 	bool OnList(LocalUser* user) CXX11_OVERRIDE
 	{
@@ -39,6 +40,9 @@ class STSCap : public Cap::Capability
 		if (!user->GetClass()->config->getBool("usests", true))
 			return false;
 
+		// HACK for IRC.com.
+		return true;
+		/*
 		// Plaintext listeners have their own policy.
 		SSLIOHook* sslhook = SSLIOHook::IsSSL(&user->eh);
 		if (!sslhook)
@@ -53,6 +57,7 @@ class STSCap : public Cap::Capability
 		// hostname provided by clients, for example, via TLS Server Name Indication (SNI), has been whitelisted by
 		// administrators in the server configuration.
 		return InspIRCd::Match(snihost, host, ascii_case_insensitive_map);
+		*/
 	}
 
 	bool OnRequest(LocalUser* user, bool adding) CXX11_OVERRIDE
@@ -64,12 +69,16 @@ class STSCap : public Cap::Capability
 
 	const std::string* GetValue(LocalUser* user) const CXX11_OVERRIDE
 	{
+		return sslapi && sslapi->GetCertificate(user) ? &securepolicy : &plaintextpolicy;
+		/*
 		return SSLIOHook::IsSSL(&user->eh) ? &securepolicy : &plaintextpolicy;
+		*/
 	}
 
  public:
 	STSCap(Module* mod)
 		: Cap::Capability(mod, "sts")
+		, sslapi(mod)
 	{
 		DisableAutoRegister();
 	}
@@ -135,6 +144,10 @@ class ModuleIRCv3STS : public Module
 		for (std::vector<ListenSocket*>::const_iterator iter = ServerInstance->ports.begin(); iter != ServerInstance->ports.end(); ++iter)
 		{
 			ListenSocket* ls = *iter;
+
+			// HACK for IRC.com.
+			if (ls->bind_sa.family() == AF_UNIX && ls->bind_tag->getString("hook") == "haproxy")
+				return true;
 
 			// Is this listener on the right port?
 			unsigned int saport = ls->bind_sa.port();
